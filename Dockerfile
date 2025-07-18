@@ -4,11 +4,11 @@ FROM python:3.10-slim
 # set a working directory
 WORKDIR /app
 
-# install system deps (if any needed by your requirements)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      build-essential && \
-    rm -rf /var/lib/apt/lists/*
+# # install system deps (if any needed by your requirements)
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#       build-essential && \
+#     rm -rf /var/lib/apt/lists/*
 
 # copy requirements and install Python dependencies
 COPY requirements.txt .

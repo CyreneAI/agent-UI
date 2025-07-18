@@ -6,7 +6,7 @@ from typing import Optional # <--- ADD THIS IMPORT
 
 # --- Configuration ---
 # Ensure your FastAPI backend is running on this URL
-FASTAPI_URL = os.getenv("FASTAPI_URL", "http://localhost:8000")
+FASTAPI_URL = os.getenv("FRONTEND_FASTAPI_URL", "http://localhost:8000")
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(
@@ -44,7 +44,7 @@ def send_request_to_fastapi(method: str, endpoint: str, data: Optional[dict] = N
         response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
         return response.json()
     except requests.exceptions.ConnectionError:
-        st.error(f"Could not connect to FastAPI backend at {FASTAPI_URL}. Please ensure it is running.")
+        st.error(f"Could not connect to FastAPI backend at {FASTAPI_URL}. Please ensure it is running and accessible from this container/environment.")
         return None
     except requests.exceptions.HTTPError as e:
         st.error(f"FastAPI error: {e.response.status_code} - {e.response.text}")
@@ -226,4 +226,3 @@ elif st.session_state.current_page == 'chat' and st.session_state.selected_agent
     chat_page(st.session_state.selected_agent_id)
 else: # Default or if no agent selected for chat
     list_agents_page()
-

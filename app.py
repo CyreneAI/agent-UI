@@ -2,11 +2,11 @@ import streamlit as st
 import requests
 import json
 import os
-from typing import Optional # <--- ADD THIS IMPORT
+from typing import Optional, Dict, Any, List
 
 # --- Configuration ---
-# Ensure your FastAPI backend is running on this URL
-FASTAPI_URL = os.getenv("FRONTEND_FASTAPI_URL", "http://localhost:8000")
+
+FASTAPI_URL = "http://localhost:8000"
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(
@@ -17,15 +17,16 @@ st.set_page_config(
 )
 
 # --- Session State Initialization ---
-# This dictionary stores variables that persist across reruns of the Streamlit app
 if 'current_page' not in st.session_state:
-    st.session_state.current_page = 'create_agent' # Default page
+    st.session_state.current_page = 'create_agent' 
 if 'selected_agent_id' not in st.session_state:
     st.session_state.selected_agent_id = None
 if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = {} # {agent_id: [{"role": "user/assistant", "content": "message"}]}
+    st.session_state.chat_history = {} 
 if 'agents' not in st.session_state:
-    st.session_state.agents = [] # Cached list of agents
+    st.session_state.agents = [] 
+if 'uploaded_agent_config' not in st.session_state:
+    st.session_state.uploaded_agent_config = {}
 
 # --- Helper Functions for FastAPI Communication ---
 
@@ -37,14 +38,16 @@ def send_request_to_fastapi(method: str, endpoint: str, data: Optional[dict] = N
             response = requests.post(url, json=data)
         elif method.lower() == 'get':
             response = requests.get(url)
+        elif method.lower() == 'delete':
+            response = requests.delete(url)
         else:
             st.error(f"Unsupported HTTP method: {method}")
             return None
 
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status() 
         return response.json()
     except requests.exceptions.ConnectionError:
-        st.error(f"Could not connect to FastAPI backend at {FASTAPI_URL}. Please ensure it is running and accessible from this container/environment.")
+        st.error(f"Could not connect to FastAPI backend at {FASTAPI_URL}. Please ensure it is running.")
         return None
     except requests.exceptions.HTTPError as e:
         st.error(f"FastAPI error: {e.response.status_code} - {e.response.text}")
@@ -60,7 +63,7 @@ def get_agents():
     """Fetches list of agents from FastAPI backend."""
     response = send_request_to_fastapi('get', 'agents/list')
     if response:
-        st.session_state.agents = response # Update cached agents
+        st.session_state.agents = response 
     return st.session_state.agents
 
 def create_agent_on_backend(agent_data: dict):
@@ -70,8 +73,8 @@ def create_agent_on_backend(agent_data: dict):
         st.success(f"Agent '{response.get('name', 'Unknown')}' created successfully!")
         # Refresh the list of agents in the sidebar
         st.session_state.agents = get_agents()
-        st.session_state.current_page = 'list_agents' # Navigate to list after creation
-        st.rerun() # Rerun to update sidebar
+        st.session_state.current_page = 'list_agents'
+        st.rerun() 
     return response
 
 def chat_with_agent_on_backend(agent_id: str, message: str):
@@ -84,6 +87,32 @@ def chat_with_agent_on_backend(agent_id: str, message: str):
     return "Error: Could not get response from agent."
 
 # --- UI Components ---
+
+def get_default_secrets_template(llm_provider: str) -> Dict[str, Any]:
+    """Provides a default JSON structure for secrets based on the selected LLM provider."""
+    base_secrets = {
+        "discord_bot_token": "YOUR_DISCORD_BOT_TOKEN",
+        "telegram_api_id": "YOUR_TELEGRAM_API_ID",
+        "telegram_api_hash": "YOUR_TELEGRAM_API_HASH",
+        "telegram_bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
+        "serpapi_api_key": "YOUR_SERPAPI_API_KEY",
+        "newsapi_org_api_key": "YOUR_NEWSAPI_ORG_API_KEY",
+        "finnhub_api_key": "YOUR_FINNHUB_API_KEY",
+        "quandl_api_key": "YOUR_QUANDL_API_KEY",
+        "cohere_api_key": "YOUR_COHERE_API_KEY"
+    }
+    
+    # Add LLM-specific keys
+    if llm_provider == "groq":
+        base_secrets["groq_api_key"] = "YOUR_GROQ_API_KEY"
+    elif llm_provider == "google":
+        base_secrets["google_api_key"] = "YOUR_GOOGLE_API_KEY"
+    elif llm_provider == "openai":
+        base_secrets["openai_api_key"] = "YOUR_OPENAI_API_KEY"
+    elif llm_provider == "anthropic":
+        base_secrets["anthropic_api_key"] = "YOUR_ANTHROPIC_API_KEY"
+    
+    return base_secrets
 
 def create_agent_page():
     """Renders the 'Create New Agent' form."""
@@ -99,62 +128,100 @@ def create_agent_page():
             st.success("JSON file uploaded successfully! Review details below.")
         except json.JSONDecodeError:
             st.error("Invalid JSON file. Please upload a valid JSON.")
-            st.session_state.uploaded_agent_config = None
+            st.session_state.uploaded_agent_config = {} 
 
     st.subheader("Agent Details")
     with st.form("create_agent_form"):
-        # Pre-fill from uploaded file if available
-        default_name = st.session_state.uploaded_agent_config.get('name', '') if 'uploaded_agent_config' in st.session_state else ''
-        default_bio = st.session_state.uploaded_agent_config.get('bio', '') if 'uploaded_agent_config' in st.session_state else ''
-        default_knowledge = st.session_state.uploaded_agent_config.get('knowledge', '') if 'uploaded_agent_config' in st.session_state else ''
-        default_persona = st.session_state.uploaded_agent_config.get('persona', '') if 'uploaded_agent_config' in st.session_state else ''
-        default_secrets = json.dumps(st.session_state.uploaded_agent_config.get('secrets', {}), indent=2) if 'uploaded_agent_config' in st.session_state else json.dumps({
-            "discord_bot_token": "YOUR_DISCORD_BOT_TOKEN",
-            "telegram_api_id": "YOUR_TELEGRAM_API_ID",
-            "telegram_api_hash": "YOUR_TELEGRAM_API_HASH",
-            "telegram_bot_token": "YOUR_TELEGRAM_BOT_TOKEN",
-            "serpapi_api_key": "YOUR_SERPAPI_API_KEY",
-            "newsapi_org_api_key": "YOUR_NEWSAPI_ORG_API_KEY",
-            "finnhub_api_key": "YOUR_FINNHUB_API_KEY",
-            "quandl_api_key": "YOUR_QUANDL_API_KEY",
-            "cohere_api_key": "YOUR_COHERE_API_KEY",
-            "groq_api_key": "YOUR_GROQ_API_KEY" # Optional, can use global
-        }, indent=2)
+        default_name = st.session_state.uploaded_agent_config.get('name', '')
+        default_system_prompt = st.session_state.uploaded_agent_config.get('system', st.session_state.uploaded_agent_config.get('persona', ''))
+        default_bio = ", ".join(st.session_state.uploaded_agent_config.get('bio', [])) if isinstance(st.session_state.uploaded_agent_config.get('bio'), list) else st.session_state.uploaded_agent_config.get('bio', '')
+        default_lore = ", ".join(st.session_state.uploaded_agent_config.get('lore', [])) if isinstance(st.session_state.uploaded_agent_config.get('lore'), list) else st.session_state.uploaded_agent_config.get('lore', '')
+        default_knowledge = ", ".join(st.session_state.uploaded_agent_config.get('knowledge', [])) if isinstance(st.session_state.uploaded_agent_config.get('knowledge'), list) else st.session_state.uploaded_agent_config.get('knowledge', '')
+        default_message_examples = json.dumps(st.session_state.uploaded_agent_config.get('messageExamples', []), indent=2)
+        default_style = json.dumps(st.session_state.uploaded_agent_config.get('style', {}), indent=2)
 
+        # LLM Provider selection
+        llm_providers = ["Groq", "Google", "OpenAI", "Anthropic", "Ollama"]
+        default_llm_provider_from_config = st.session_state.uploaded_agent_config.get('modelProvider', 'Groq').capitalize()
+        default_llm_provider_idx = llm_providers.index(default_llm_provider_from_config) if default_llm_provider_from_config in llm_providers else 0
+        
+        llm_provider = st.selectbox(
+            "LLM Provider",
+            options=llm_providers,
+            index=default_llm_provider_idx,
+            key="llm_provider_select"
+        )
+        
+        # LLM Model input
+        default_llm_model = st.session_state.uploaded_agent_config.get('settings', {}).get('model', '')
+        llm_model = st.text_input("LLM Model (Optional)", value=default_llm_model, help="Specific model name (e.g., 'llama3-70b-8192', 'gemini-pro', 'claude-3-opus-20240229', 'gpt-4'). Leave blank for provider default.")
+        
         name = st.text_input("Agent Name", value=default_name, help="A unique name for your agent.")
-        bio = st.text_area("Bio", value=default_bio, help="A brief description of your agent's background or purpose.")
-        knowledge = st.text_area("Knowledge Areas", value=default_knowledge, help="Specific domains or topics your agent is knowledgeable about.")
-        persona = st.text_area("Persona", value=default_persona, help="How your agent should behave (e.g., 'friendly', 'formal', 'humorous').")
-        secrets_json_str = st.text_area("Secrets (JSON)", value=default_secrets, height=250, help="API keys for tools. Leave blank or remove keys for tools you don't want.")
 
+        uploaded_secrets = st.session_state.uploaded_agent_config.get('settings', {}).get('secrets', {})
+        if uploaded_secrets:
+            secrets_json_str_initial = json.dumps(uploaded_secrets, indent=2)
+        else:
+            secrets_json_str_initial = json.dumps(get_default_secrets_template(llm_provider.lower()), indent=2)
+
+        secrets_json_str = st.text_area(
+            "Secrets (JSON)", 
+            value=secrets_json_str_initial, 
+            height=250, 
+            help="API keys for tools and LLMs. Fill in required keys for your chosen LLM provider and any tools you want to enable. Remove unused keys."
+        )
+        system_prompt = st.text_area("System Prompt", value=default_system_prompt, height=150, help="The core system instruction or prompt for the agent.")
+        
+        bio = st.text_area("Bio (comma-separated)", value=default_bio, height=100, help="A brief description of your agent's background or purpose. Enter comma-separated values.")
+        lore = st.text_area("Lore (comma-separated)", value=default_lore, height=100, help="Background story or specific lore for the agent. Enter comma-separated values.")
+        knowledge = st.text_area("Knowledge Areas (comma-separated)", value=default_knowledge, height=100, help="Specific domains or topics your agent is knowledgeable about. Enter comma-separated values.")
+        message_examples_str = st.text_area("Message Examples (JSON Array)", value=default_message_examples, height=200, help="A JSON array of example conversations. Each example is an array of message objects. E.g., [[{'user': 'user1', 'content': {'text': 'Hello'}}, {'user': 'agent', 'content': {'text': 'Hi'}}]]")
+        style_str = st.text_area("Style (JSON Object)", value=default_style, height=150, help="A JSON object defining the agent's conversational style. E.g., {'all': ['formal', 'concise']}.")
+        
         submitted = st.form_submit_button("Create Agent")
 
         if submitted:
             try:
                 secrets_dict = json.loads(secrets_json_str)
+                message_examples_parsed = json.loads(message_examples_str) if message_examples_str.strip() else []
+                style_parsed = json.loads(style_str) if style_str.strip() else {}
+
+                bio_list = [item.strip() for item in bio.split(',') if item.strip()] if bio else []
+                lore_list = [item.strip() for item in lore.split(',') if item.strip()] if lore else []
+                knowledge_list = [item.strip() for item in knowledge.split(',') if item.strip()] if knowledge else []
+
                 agent_data = {
                     "name": name,
-                    "bio": bio,
-                    "knowledge": knowledge,
-                    "persona": persona,
-                    "secrets": secrets_dict
+                    "modelProvider": llm_provider.lower(), 
+                    "settings": {
+                        "model": llm_model if llm_model else "", 
+                        "temperature": 0.7, 
+                        "maxTokens": 8192, 
+                        "secrets": secrets_dict,
+                        "voice": None 
+                    },
+                    "system": system_prompt,
+                    "bio": bio_list,
+                    "lore": lore_list,
+                    "knowledge": knowledge_list,
+                    "messageExamples": message_examples_parsed,
+                    "style": style_parsed
                 }
                 create_agent_on_backend(agent_data)
-            except json.JSONDecodeError:
-                st.error("Invalid JSON in Secrets field. Please correct it.")
+            except json.JSONDecodeError as e:
+                st.error(f"Invalid JSON in Secrets, Message Examples, or Style field: {e}. Please correct it.")
             except Exception as e:
                 st.error(f"An error occurred during agent creation: {e}")
 
 def chat_page(agent_id: str):
     """Renders the chat interface for a selected agent."""
-    agents = get_agents() # Refresh agents to get current names
+    agents = get_agents() 
     agent_name = next((a['name'] for a in agents if a['id'] == agent_id), "Unknown Agent")
     st.title(f"💬 Chat with {agent_name}")
 
     if agent_id not in st.session_state.chat_history:
         st.session_state.chat_history[agent_id] = []
 
-    # Display chat messages
     for message in st.session_state.chat_history[agent_id]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -178,7 +245,7 @@ def chat_page(agent_id: str):
 def list_agents_page():
     """Renders the list of available agents."""
     st.title("📋 Available Agents")
-    agents = get_agents() # Fetch latest agents
+    agents = get_agents()
 
     if not agents:
         st.info("No agents created yet. Use the 'Create New Agent' option in the sidebar.")
@@ -188,8 +255,17 @@ def list_agents_page():
             with col1:
                 st.subheader(agent.get('name', 'N/A'))
                 st.write(f"ID: `{agent.get('id', 'N/A')}`")
-                st.write(f"Bio: {agent.get('bio', 'No bio provided.')}")
                 st.write(f"Persona: {agent.get('persona', 'No persona provided.')}")
+                st.write(f"Bio: {', '.join(agent.get('bio', [])) if isinstance(agent.get('bio'), list) else agent.get('bio', 'No bio provided.')}")
+                st.write(f"Lore: {', '.join(agent.get('lore', [])) if isinstance(agent.get('lore'), list) else agent.get('lore', 'No lore provided.')}")
+                st.write(f"Knowledge: {', '.join(agent.get('knowledge', [])) if isinstance(agent.get('knowledge'), list) else agent.get('knowledge', 'No knowledge provided.')}")
+                st.markdown(f"**LLM Provider:** `{agent.get('modelProvider', 'N/A').capitalize()}`")
+                st.markdown(f"**LLM Model:** `{agent.get('settings', {}).get('model', 'Default')}`")
+                st.markdown(f"**Message Examples:**")
+                st.json(agent.get('messageExamples', []))
+                st.markdown(f"**Style:**")
+                st.json(agent.get('style', {}))
+
             with col2:
                 if st.button(f"Chat with {agent.get('name', 'Agent')}", key=f"chat_{agent.get('id')}"):
                     st.session_state.selected_agent_id = agent['id']
@@ -202,7 +278,8 @@ with st.sidebar:
     st.header("Agent Console")
     if st.button("➕ Create New Agent", use_container_width=True):
         st.session_state.current_page = 'create_agent'
-        st.session_state.selected_agent_id = None # Clear selected agent
+        st.session_state.selected_agent_id = None 
+        st.session_state.uploaded_agent_config = {} 
         st.rerun()
 
     st.markdown("---")
@@ -224,5 +301,5 @@ if st.session_state.current_page == 'create_agent':
     create_agent_page()
 elif st.session_state.current_page == 'chat' and st.session_state.selected_agent_id:
     chat_page(st.session_state.selected_agent_id)
-else: # Default or if no agent selected for chat
+else: 
     list_agents_page()

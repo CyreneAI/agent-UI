@@ -6,7 +6,7 @@ from typing import Optional, Dict, Any, List
 
 # --- Configuration ---
 
-FASTAPI_URL = "http://localhost:8000"
+FASTAPI_URL = "http://bot-api:8000"
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(
